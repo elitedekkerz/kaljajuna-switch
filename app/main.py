@@ -30,18 +30,22 @@ class servo:
 
         
 s = servo(2)
-hold_time = utime.ticks_ms()
+pin_up_time = 0
+pin_down = False
 
 def pin_callback(p):
-    #Publish message "down" in topic "down"
     global mqtt
-    global hold_time
+    global pin_down
+    global pin_up_time
 
-    t = utime.ticks_ms()
-    dt = utime.ticks_diff(t, hold_time)
-    if dt > 1000:
-        hold_time = t
-        mqtt.pub("pin", "down")
+    if p.value() == 0:
+        if pin_down == False:
+            mqtt.pub("status", "occupied")
+            pin_down = True
+
+        pin_up_time = 0
+    else:
+        pin_up_time = utime.ticks_ms()
 
 def callback_angle(message):
     d = int(message)
@@ -77,7 +81,7 @@ def run(mqtt_obj, parameters):
 
     #Setup callback for pin 
     p0 = machine.Pin(0, machine.Pin.IN)
-    p0.irq(trigger=machine.Pin.IRQ_FALLING, handler=pin_callback)
+    p0.irq(trigger=machine.Pin.IRQ_FALLING | machine.Pin.IRQ_RISING, handler=pin_callback)
 
     #Main loop
     while True:
@@ -85,3 +89,11 @@ def run(mqtt_obj, parameters):
         mqtt.check_msg()
 
         utime.sleep(0.1)
+
+        global pin_down
+        global pin_up_time
+        if pin_down == True and pin_up_time > 0:
+            dt = utime.ticks_diff(utime.ticks_ms(), pin_up_time)
+            if dt > 1000:
+                mqtt.pub("status", "free")
+                pin_down = False
